@@ -1,0 +1,37 @@
+{
+  "online": {
+    "processes": [
+      {
+        "name": "carolinaunifiedapi",
+        "algorithmName": "main",
+        "namespace": "",
+        "algorithmTitle": {
+          "pt-br": "Carolina Unified API",
+          "en-US": "Carolina Unified API"
+        },
+        "algorithmDescription": {
+          "pt-br": "Carolina Unified API",
+          "en-US": "Carolina Unified API"
+        },
+        "instanceProperties": {
+          "profile": "",
+          "properties": {
+            "dockerImage": "carolinaunifiedapi/carolinaunifiedapi:1.0.0",
+            "instanceType": "c1.medium"
+          }
+        }
+      }
+    ]
+  },
+  "docker": [
+    {
+      "dockerName": "carolinaunifiedapi",
+      "dockerTag": "1.0.0",
+      "gitBranch": "main",
+      "gitPath": "/",
+      "instanceType": "c1.medium",
+      "gitDockerfileName": "Dockerfile", 
+      "gitRepoUrl": "https://github.com/JuvenalDuarte/carolina_unified_api"
+    }
+  ]
+}
