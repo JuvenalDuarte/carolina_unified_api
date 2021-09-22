@@ -29,10 +29,17 @@ server_bp = Blueprint('main', __name__)
 
 def update_embeddings():
     global df
+
+    login = Carol()
+    _settings = Apps(login).get_settings()
+    kb_file = _settings.get('knowledgebase_file')
+    if kb_file in [None, ""]: 
+        logger.warn(f'Setting \"knowledgebase_file\" not filled. Using \"df\" as default.')
+        kb_file = "df"
     
     # Get files from Carol storage
-    logger.debug('Loading documents df.')
-    df_tmp = get_file_from_storage('df')
+    logger.debug(f'Loading documents {kb_file}.')
+    df_tmp = get_file_from_storage(kb_file)
     logger.debug('Done')
 
     # Update values after all of them are loaded from Carol storage
