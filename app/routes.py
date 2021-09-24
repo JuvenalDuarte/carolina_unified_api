@@ -123,6 +123,7 @@ def reverseKeywordSearch(kb, q, fields=["title", "question"]):
     # Checks if any title or question is exactly contained on the query
     substr_df = title_kb[title_kb["sentence"].apply(lambda x: True if x in q else False)].copy()
     if len(substr_df) >= 1: substr_df["score"] = 1.0
+    else: return substr_df 
 
     # Discount score by its length difference to query
     substr_df["s_length"] = [ len(s) for s in substr_df["sentence"].values ]
@@ -270,6 +271,10 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
 
         results = reverseKeywordSearch(kb=kcs_articles, q=query, fields=["title", "question", "tags"])
     ## KCS SPECIFIC ##
+
+    if (len(results) < 1):
+        logger.warn('No matching article has been found.')
+        return results, 0
 
     try:
         results.drop(columns=['sentence_embedding'], inplace=True)
