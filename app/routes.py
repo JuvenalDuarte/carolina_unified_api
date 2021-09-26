@@ -180,22 +180,19 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
 
     # KEYWORD SEARCH
     # =================================================
-    logger.debug('Trying keyword search.')
     if keywordsearch_flag:
-        logger.debug('Trying keyword search on KCS database.')
         kcs_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "KCS"]
         kcskeywordResults = keywordSearch(kb=kcs_articles, q=query, threshold=1, fields=["title", "question", "tags"])
+        logger.info(f'{kcskeywordResults.shape[0]} articles retrieved from keyword search on KCS database.')
 
-        logger.debug('Trying keyword search on TDN database.')
         tdn_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "TDN"]
         tdnkeywordResults = keywordSearch(kb=tdn_articles, q=query, threshold=0.9, fields=["title"])
+        logger.info(f'{tdnkeywordResults.shape[0]} articles retrieved from keyword search on TDN database.')
 
         keywordResults = pd.concat([kcskeywordResults, tdnkeywordResults])
 
     else: 
         keywordResults = pd.DataFrame(columns=sentence_embeddings_df.columns)
-
-    dft = sentence_embeddings_df.copy()
 
 
     # SEMANTIC SEARCH
@@ -209,8 +206,40 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
     logger.debug('Calculating article scores.')
     score = util.pytorch_cos_sim(query_vec, articles)
     semanticResults["score"] = score[0]
+    semanticResults["type_of_search"] = "semantic"
 
-    logger.debug('Filtering articles below the threshold.')
+    logger.info(f'{semanticResults.shape[0]} articles retrieved from semantic search both database.')
+
+
+    # MERGING RESULTS
+    # =================================================
+    ## TDN SPECIFIC ##
+    logger.info('Applying business logic to filter out bad answers fot TDN.')
+    tdn_articles = semanticResults[semanticResults["database"] == "TDN"].copy()
+    kcs_articles = semanticResults[semanticResults["database"] == "KCS"].copy()
+
+    tdn_previous = tdn_articles[id_column].nunique()
+    query_ntokens = len(str(query).split())
+    tdn_articles["IsRelated"] = tdn_articles.apply(lambda x: isRelated(query_ntokens=query_ntokens, row=x, limit=0.8), axis=1)
+    tdn_articles = tdn_articles[tdn_articles["IsRelated"] != False].copy()
+
+    tdn_after = tdn_articles[id_column].nunique()
+    tdn_articles.drop(columns="IsRelated", inplace=True)
+    semanticResults = pd.concat([kcs_articles, tdn_articles])
+    logger.info(f'{(tdn_previous-tdn_after)} TDN articles discarded.')
+    ## TDN SPECIFIC ##
+
+    if (len(keywordResults) > 0) and (keywordResults["score"].mean() == 1.0) and hasCode(query):
+        # if there is any exact match on keywords, ignore semantic search
+        logger.info('Exact matches found for query code. Using only keyword search results.')
+        results = keywordResults.copy()
+    else:
+        logger.info('Combining keyword and semantic search results.')
+        # if keyword search didn't succeed returns a mix between semantic and keyword search results
+        results = pd.concat([keywordResults, semanticResults], ignore_index=True)
+
+
+    logger.info('Filtering articles below the threshold.')
 
     # Whenever a dict is provided we assume the threshold will be defined for particular columns or "all", to designate general
     if isinstance(threshold, dict):
@@ -219,49 +248,25 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
         # Particular thresholds for each column will be set after the general
         if "all" in threshold:
 
-            logger.debug(f'Using general threshold {threshold["all"]} for all columns without custom threshold.')
-            semanticResults["custom_threshold"] = int(threshold["all"])
+            logger.info(f'Using general threshold {threshold["all"]} for all columns without custom threshold.')
+            results["custom_threshold"] = int(threshold["all"])
             del threshold['all']
             
         else:
-            semanticResults["custom_threshold"] = None
+            results["custom_threshold"] = None
 
         # Setting the particular thresholds (per column)
         for c in threshold.keys():
 
-            logger.debug(f'Using {threshold[c]} threshold for {c}.')
-            semanticResults.loc[semanticResults["matched_on"] == c, "custom_threshold"] = int(threshold[c])
+            logger.info(f'Using {threshold[c]} threshold for {c}.')
+            results.loc[results["matched_on"] == c, "custom_threshold"] = int(threshold[c])
 
-        semanticResults = semanticResults[semanticResults["score"] >= semanticResults["custom_threshold"] / 100].copy()
+        results = results[results["score"] >= results["custom_threshold"] / 100].copy()
 
     # If the threshold is a single scalar, then it is global
     else:
-        semanticResults = semanticResults[semanticResults["score"] >= threshold/100].copy()
-
-    semanticResults["type_of_search"] = "semantic"
-
-
-    # MERGING RESULTS
-    # =================================================
-    ## TDN SPECIFIC ##
-    logger.debug('Applying business logic to filter out bad answers fot TDN.')
-    tdn_articles = semanticResults[semanticResults["database"] == "TDN"]
-    kcs_articles = semanticResults[semanticResults["database"] == "KCS"]
-    query_ntokens = len(str(query).split())
-    tdn_articles["IsRelated"] = tdn_articles.apply(lambda x: isRelated(query_ntokens=query_ntokens, row=x, limit=0.8), axis=1)
-    tdn_articles = tdn_articles[tdn_articles["IsRelated"] != False].copy()
-    tdn_articles.drop(columns="IsRelated", inplace=True)
-    semanticResults = pd.concat([kcs_articles, tdn_articles])
-    ## TDN SPECIFIC ##
-
-
-    logger.debug('Merging search results.')
-    if (len(keywordResults) > 0) and (keywordResults["score"].mean() == 1.0) and hasCode(query):
-        # if there is any exact match on keywords, ignore semantic search
-        results = keywordResults.copy()
-    else:
-        # if keyword search didn't succeed returns a mix between semantic and keyword search results
-        results = pd.concat([keywordResults, semanticResults], ignore_index=True)
+        logger.info(f'Using general {threshold} threshold for all columns.')
+        results = results[results["score"] >= threshold/100].copy()
 
 
     ## KCS SPECIFIC ##
