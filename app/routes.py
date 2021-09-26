@@ -202,13 +202,13 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
     semanticResults = sentence_embeddings_df.copy()
     torch_l = [torch.from_numpy(v) for v in semanticResults["sentence_embedding"].values]
     articles = torch.stack(torch_l, dim=0)
-
     logger.debug('Calculating article scores.')
     score = util.pytorch_cos_sim(query_vec, articles)
-    semanticResults["score"] = score[0]
+    semanticResults['score'] = list(score.cpu().detach().numpy()[-1,:])
     semanticResults["type_of_search"] = "semantic"
+    max_sem_score = semanticResults["score"].max()
 
-    logger.info(f'{semanticResults.shape[0]} articles retrieved from semantic search both database.')
+    logger.info(f'Maximum semantic score found: {max_sem_score}.')
 
 
     # MERGING RESULTS
@@ -239,7 +239,7 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
         results = pd.concat([keywordResults, semanticResults], ignore_index=True)
 
 
-    logger.info('Filtering articles below the threshold.')
+    logger.info(f'Evaluating scores against threshold for {results.shape[0]} matching sentences.')
 
     # Whenever a dict is provided we assume the threshold will be defined for particular columns or "all", to designate general
     if isinstance(threshold, dict):
@@ -266,11 +266,13 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
     # If the threshold is a single scalar, then it is global
     else:
         logger.info(f'Using general {threshold} threshold for all columns.')
-        results = results[results["score"] >= threshold/100].copy()
+        results = results[results["score"] >= (threshold/100)].copy()
 
 
     ## KCS SPECIFIC ##
     if (len(results) < 1):
+        logger.info('No article with score higher than the threshold. Trying reverse keyword search.')
+
         # Tries reverse keyword search as the last resource
         kcs_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "KCS"]
 
