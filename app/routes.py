@@ -259,7 +259,7 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
         for c in threshold.keys():
 
             logger.info(f'Using {threshold[c]} threshold for {c}.')
-            results.loc[results["matched_on"] == c, "custom_threshold"] = int(threshold[c])
+            results.loc[results["sentence_source"] == c, "custom_threshold"] = int(threshold[c])
 
         results = results[results["score"] >= results["custom_threshold"] / 100].copy()
 
@@ -512,4 +512,4 @@ def validate_threshold_custom(val):
     sentence_source_values = list(df['sentence_source'].unique()) + ["all"]
     sentence_source_filter_values = val.keys()
     if sentence_source_values and any(s not in sentence_source_values for s in sentence_source_filter_values):
-        raise ValidationError("One or more values that you are trying to filter does not exist in the sentence_source column.")
+        raise ValidationError("One or more values that you are setting the threshold does not exist in the dataframe columns.")
