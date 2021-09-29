@@ -174,7 +174,6 @@ def isRelated(query_ntokens, row, limit):
     return True
 ## TDN SPECIFIC ##
 
-
 def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k, response_columns, id_column="id", validation=False):
     global keywordsearch_flag
 
@@ -357,8 +356,22 @@ def validate():
 
     df_tmp = df[df["id"].isin(expected_ids)].copy()
     if len(df_tmp) > 0:
-        logger.debug(f'Validating query {query} against the following articles: {expected_ids}')
-        results_df, total_matches = get_similar_questions(model, df_tmp, query, threshold=0.0, threshold_custom=None, k=500, validation=True)
+        # Reading stopwords  to be removed
+        logger.info(f'Reading list of custom stopwords.')
+        with open('/app/cfg/stopwords.txt') as f:
+            custom_stopwords = f.read().splitlines()
+
+        logger.info(f'Translating query \"{query}\" to embedding space.')
+        query = transformSentences(query, custom_stopwords)
+        query_vec = model.encode([query], convert_to_tensor=True)
+
+        logger.info(f'Validating query {query} against the following articles: {expected_ids}')
+        results_df, total_matches = get_similar_questions(sentence_embeddings_df=df_tmp, 
+                                                        query=query, 
+                                                        query_vec=query_vec, 
+                                                        threshold=0.0, 
+                                                        k=500, 
+                                                        validation=True)
 
         records_dict_tmp = results_df.to_dict('records')
         records_dict = sorted(records_dict_tmp, key=operator.itemgetter('score'), reverse=True)
