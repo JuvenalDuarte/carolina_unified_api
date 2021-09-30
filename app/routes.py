@@ -117,23 +117,21 @@ def keywordSearch(kb, q, nresults=1, threshold=None, fields=["title", "question"
     return substr_df
 
 ## KCS SPECIFIC ##
-def reverseKeywordSearch(kb, q, fields=["title", "question"]):
-    title_kb = kb[kb["sentence_source"].isin(fields)].copy()
+def matching_tokens(search_tokens, sentence):
+    sentence_tokens = sentence.split()
+    intersec = list(set(search_tokens) & set(sentence_tokens))
+    return len(intersec)/len(search_tokens) * len(intersec)/len(sentence_tokens)
+
+def reverseKeywordSearch(kb, q, fields=["title", "question"], threshold=0.01):
+    article_sentences = kb[kb["sentence_source"].isin(fields)].copy()
+    query_tokens = q.split()
     
     # Checks if any title or question is exactly contained on the query
-    substr_df = title_kb[title_kb["sentence"].apply(lambda x: True if x in q else False)].copy()
-    if len(substr_df) >= 1: substr_df["score"] = 1.0
-    else: return substr_df 
+    article_sentences["score"] = article_sentences["sentence"].apply(lambda x: matching_tokens(query_tokens, x))
+    article_sentences = article_sentences[article_sentences["score"] > (threshold/100)]
+    article_sentences["type_of_search"] = "rkeyword"
 
-    # Discount score by its length difference to query
-    substr_df["s_length"] = [ len(s) for s in substr_df["sentence"].values ]
-    query_length = len(q)
-    substr_df["score"] = substr_df["s_length"].apply(lambda x: max(0.75, 1 - (query_length - x)/query_length))
-    substr_df.drop(columns=["s_length"], inplace=True)
-
-    substr_df["type_of_search"] = "rkeyword"
-
-    return substr_df
+    return article_sentences
 ## KCS SPECIFIC ##
 
 ## KCS SPECIFIC ##
@@ -179,9 +177,17 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
 
     # KEYWORD SEARCH
     # =================================================
+    keyword_columns = ["title", 
+                        "title-sinonimos",
+                        "question",
+                        "question-sinonimos" ,
+                        "tags", 
+                        "tags-sinonimos", 
+                        "autotag"]
+
     if keywordsearch_flag:
         kcs_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "KCS"]
-        kcskeywordResults = keywordSearch(kb=kcs_articles, q=query, threshold=1, fields=["title", "question", "tags"])
+        kcskeywordResults = keywordSearch(kb=kcs_articles, q=query, threshold=1, fields=keyword_columns)
         logger.info(f'{kcskeywordResults.shape[0]} articles retrieved from keyword search on KCS database.')
 
         tdn_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "TDN"]
@@ -228,7 +234,7 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
     logger.info(f'{(tdn_previous-tdn_after)} TDN articles discarded.')
     ## TDN SPECIFIC ##
 
-    if (len(keywordResults) > 0) and (keywordResults["score"].mean() == 1.0) and hasCode(query):
+    if (len(keywordResults) > 3) and (keywordResults["score"].mean() == 1.0) and hasCode(query):
         # if there is any exact match on keywords, ignore semantic search
         logger.info('Exact matches found for query code. Using only keyword search results.')
         results = keywordResults.copy()
@@ -274,8 +280,7 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
 
         # Tries reverse keyword search as the last resource
         kcs_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "KCS"]
-
-        results = reverseKeywordSearch(kb=kcs_articles, q=query, fields=["title", "question", "tags"])
+        results = reverseKeywordSearch(kb=kcs_articles, q=query, fields=keyword_columns, threshold=threshold)
     ## KCS SPECIFIC ##
 
     if (len(results) < 1):
