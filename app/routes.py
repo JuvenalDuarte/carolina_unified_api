@@ -280,7 +280,7 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
 
         # Tries reverse keyword search as the last resource
         kcs_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "KCS"]
-        results = reverseKeywordSearch(kb=kcs_articles, q=query, fields=keyword_columns, threshold=threshold)
+        results = reverseKeywordSearch(kb=kcs_articles, q=query, fields=keyword_columns, threshold=threshold["all"])
     ## KCS SPECIFIC ##
 
     if (len(results) < 1):
