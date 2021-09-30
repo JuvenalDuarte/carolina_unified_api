@@ -429,6 +429,8 @@ def query():
         if "all" not in threshold_custom:
             threshold_custom["all"] = threshold
         threshold = threshold_custom
+    else:
+        threshold = {"all": threshold}
 
     logger.debug(f'Processing query.')
     df_tmp = df.copy()
