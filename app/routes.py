@@ -142,13 +142,7 @@ def hasCode(txt):
     # The second pattern, an special case observed on rejections, captures de numbers + definition, such as "934 rejeicao".
     pattern2 = re.compile(r'[0-9]{3,}[\s]+(?:rejeicao)')
 
-    # The third pattern, an special case observed on nts, captures de numbers + date, such as "nt 22 07 2020".
-    pattern3 = re.compile(r'(\s)(?:nt)\s[0-9 ]{2,10}')
-
-    # The fourth pattern, an special case observed on mps, captures de numbers + definition, such as "mp 927 2020" or "mp 936".
-    pattern4 = re.compile(r'(?:mp)\s[0-9\s]{3,}')
-
-    if pattern1.match(txt) or pattern2.match(txt) or pattern3.match(txt) or pattern4.match(txt): return True
+    if pattern1.match(txt) or pattern2.match(txt): return True
     else: return False
 ## KCS SPECIFIC ##
 
@@ -234,14 +228,18 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
     logger.info(f'{(tdn_previous-tdn_after)} TDN articles discarded.')
     ## TDN SPECIFIC ##
 
-    if (len(keywordResults) > 3) and (keywordResults["score"].mean() == 1.0) and hasCode(query):
-        # if there is any exact match on keywords, ignore semantic search
-        logger.info('Exact matches found for query code. Using only keyword search results.')
+    if hasCode(query):
+        logger.info('Quey contains code. Using only keyword search results.')
         results = keywordResults.copy()
     else:
-        logger.info('Combining keyword and semantic search results.')
-        # if keyword search didn't succeed returns a mix between semantic and keyword search results
-        results = pd.concat([keywordResults, semanticResults], ignore_index=True)
+        if (len(keywordResults) > 3) and (keywordResults["score"].mean() == 1.0):
+            # if there is any exact match on keywords, ignore semantic search
+            logger.info('Exact matches found for query code. Using only keyword search results.')
+            results = keywordResults.copy()
+        else:
+            logger.info('Combining keyword and semantic search results.')
+            # if keyword search didn't succeed returns a mix between semantic and keyword search results
+            results = pd.concat([keywordResults, semanticResults], ignore_index=True)
 
 
     logger.info(f'Evaluating scores against threshold for {results.shape[0]} matching sentences.')
