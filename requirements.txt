@@ -10,3 +10,4 @@ webargs
 unidecode
 ftfy
 gevent
+nltk

@@ -12,6 +12,7 @@ import torch
 import re
 import ftfy
 from unidecode import unidecode
+from nltk.util import ngrams
 
 # Logger
 logger = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ def findMatches(title, query_tokens, scale):
     for qt in query_tokens:
         if qt in title_tokens: 
             matches += 1
-            
+
     return scale * (matches/len(query_tokens))
 
 def keywordSearch(kb, q, nresults=1, threshold=None, fields=["title", "question"]):
@@ -183,8 +184,62 @@ def isRelated(query_ntokens, row, limit):
     return True
 ## TDN SPECIFIC ##
 
-def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k, response_columns=None, id_column="id", validation=False):
+def getSynonyms():
+    global custom_stopwords
+    login = Carol()
+
+    # Download abbreviations from named query
+    abbreviations = Query(login).named(named_query='get_abbreviations').go().results
+    fromToTable = pd.DataFrame.from_records(abbreviations)
+
+    # Generate unique mappings from both directions
+    reverse = fromToTable.copy()
+    fromToTable.rename(columns={"abbreviationacronym":"from", "definition":"to"}, inplace=True)
+    reverse.rename(columns={"abbreviationacronym":"to", "definition":"from"}, inplace=True)
+    fromToTable = pd.concat([fromToTable, reverse], ignore_index=True)
+
+    # Regularizing case and special char variations
+    fromToTable["from"] = fromToTable["from"].apply(lambda x: transformSentences(x, custom_stopwords))
+    fromToTable["to"] = fromToTable["to"].apply(lambda x: transformSentences(x, custom_stopwords))
+
+    fromToTable.drop_duplicates(inplace=True)
+
+    mapping = dict(zip(fromToTable["from"].values, fromToTable["to"].values))
+
+    return mapping
+
+def expandSysnonyms(query):
+    global syn_mapping
+    queries_expanded = [query]
+
+    # Retrieving single words on query with applicable sysnonyms substitution
+    applicableSynonyms = list(set(query.split()) & set(syn_mapping.keys()))
+    
+    # Retrieving ngrams up to 5 tokens with applicable sysnonyms substitution
+    for ngram in [2, 3, 4, 5]:
+        combinations = list(ngrams(query.split(), ngram))
+        combinations_s = [" ".join(c) for c in combinations]
+        applicableSynonyms += list(set(combinations_s) & set(syn_mapping.keys()))
+
+    if applicableSynonyms:
+        print(f"The following words will be replaced to generate query variations: {applicableSynonyms}.")
+
+        # Generating all possible combinations of synonyms
+        # WARNING: generates 2^n possible combinations. If n (number of applicable synonyms) is large,
+        # this task may take a while or raise OOM error.
+        for k in applicableSynonyms:
+            new_possible_variations = [q.replace(k, syn_mapping[k]) for q in queries_expanded]
+            queries_expanded += new_possible_variations
+
+    return queries_expanded
+
+def get_similar_questions(model, sentence_embeddings_df, query, threshold, k, response_columns=None, id_column="id", validation=False):
     global keywordsearch_flag
+    global custom_stopwords
+
+    logger.info(f'Translating query \"{query}\" to embedding space.')
+    query = transformSentences(query, custom_stopwords)
+    query_expanded = expandSysnonyms(query)
 
     # KEYWORD SEARCH
     # =================================================
@@ -219,7 +274,12 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
     torch_l = [torch.from_numpy(v) for v in semanticResults["sentence_embedding"].values]
     articles = torch.stack(torch_l, dim=0)
     logger.debug('Calculating article scores.')
+    query_vec = model.encode(query_expanded, convert_to_tensor=True)
     score = util.pytorch_cos_sim(query_vec, articles)
+
+    # from all the query variations, consider only the highest score
+    score = score.max(dim=0)[0].tolist()
+
     semanticResults['score'] = list(score.cpu().detach().numpy()[-1,:])
     semanticResults["type_of_search"] = "semantic"
     max_sem_score = semanticResults["score"].max()
@@ -325,7 +385,15 @@ df = None
 model = None
 keywordsearch_flag = True
 
-logger.debug('App started. Please, make sure you load the model and knowledge base before you start.')
+# Reading stopwords  to be removed
+logger.info(f'Reading list of custom stopwords.')
+with open('/app/cfg/stopwords.txt') as f:
+    custom_stopwords = f.read().splitlines()
+
+logger.info(f'Downloading synonyms mappings.')
+syn_mapping = getSynonyms()
+
+logger.info('App started. Please, make sure you load the model and knowledge base before you start.')
 
 
 @server_bp.route('/', methods=['GET'])
@@ -377,20 +445,11 @@ def validate():
 
     df_tmp = df[df["id"].isin(expected_ids)].copy()
     if len(df_tmp) > 0:
-        # Reading stopwords  to be removed
-        logger.info(f'Reading list of custom stopwords.')
-        with open('/app/cfg/stopwords.txt') as f:
-            custom_stopwords = f.read().splitlines()
-
-        logger.info(f'Translating query \"{query}\" to embedding space.')
-        query = transformSentences(query, custom_stopwords)
-        query_vec = model.encode([query], convert_to_tensor=True)
 
         logger.info(f'Validating query {query} against the following articles: {expected_ids}')
-
-        results_df, total_matches = get_similar_questions(sentence_embeddings_df=df_tmp, 
+        results_df, total_matches = get_similar_questions(model,
+                                                        sentence_embeddings_df=df_tmp, 
                                                         query=query, 
-                                                        query_vec=query_vec, 
                                                         threshold=0.0, 
                                                         k=500, 
                                                         response_columns=None, 
@@ -493,17 +552,8 @@ def query():
         logger.warn(f'No results returned from filter.')
         return jsonify({'total_matches': 0, 'topk_results': []})
 
-    # Reading stopwords  to be removed
-    logger.info(f'Reading list of custom stopwords.')
-    with open('/app/cfg/stopwords.txt') as f:
-        custom_stopwords = f.read().splitlines()
-
-    logger.info(f'Translating query \"{query}\" to embedding space.')
-    query = transformSentences(query, custom_stopwords)
-    query_vec = model.encode([query], convert_to_tensor=True)
-
     logger.info(f'Calculating similarities.')
-    df_res, total_matches = get_similar_questions(df_tmp, query, query_vec, threshold, k, response_columns)
+    df_res, total_matches = get_similar_questions(model, df_tmp, query, threshold, k, response_columns)
 
     if len(df_res) < 1:
         logger.warn(f'Unable to find any similar article for the threshold {threshold}.')
