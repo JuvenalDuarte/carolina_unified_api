@@ -134,18 +134,35 @@ def reverseKeywordSearch(kb, q, fields=["title", "question"], threshold=0.01):
     return article_sentences
 ## KCS SPECIFIC ##
 
-## KCS SPECIFIC ##
-def hasCode(txt):
+def findCodes(txt):
     # The first pattern captures de definition + numbers, such as "erro d2233".
     pattern1 = re.compile(r'(?:rotina|rejeicao|registro|error|erro|evento)\s[a-z]*[0-9.]{3,}')
     
     # The second pattern, an special case observed on rejections, captures de numbers + definition, such as "934 rejeicao".
     pattern2 = re.compile(r'[0-9]{3,}[\s]+(?:rejeicao)')
+    
+    codes = pattern1.findall(txt)
+    
+    codesr = pattern2.findall(txt)
+    codes += [" ".join(reversed(c.split())) for c in codesr]
+    
+    return codes
 
-    if pattern1.match(txt) or pattern2.match(txt): return True
-    else: return False
-## KCS SPECIFIC ##
+def filterContainingCodes(search_codes, sentence):
+    sentence_codes = findCodes(sentence)
 
+    # If the sentence contains a code, present it only if at least one of the 
+    # codes match to the codes on search
+    if sentence_codes:
+        intersec = list(set(sentence_codes) & set(search_codes))
+        if intersec:
+            return True
+        else:
+            return False
+
+    # If sentence doesn't have code delegate the decision to semantic
+    else:
+        return True
 
 ## TDN SPECIFIC ##
 # Intercept well known failure cases from the model and
@@ -228,18 +245,19 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
     logger.info(f'{(tdn_previous-tdn_after)} TDN articles discarded.')
     ## TDN SPECIFIC ##
 
-    if hasCode(query):
-        logger.info('Quey contains code. Using only keyword search results.')
+    if (len(keywordResults) > 3) and (keywordResults["score"].mean() == 1.0):
+        # if there is any exact match on keywords, ignore semantic search
+        logger.info('Exact matches found for query code. Using only keyword search results.')
         results = keywordResults.copy()
     else:
-        if (len(keywordResults) > 3) and (keywordResults["score"].mean() == 1.0):
-            # if there is any exact match on keywords, ignore semantic search
-            logger.info('Exact matches found for query code. Using only keyword search results.')
-            results = keywordResults.copy()
-        else:
-            logger.info('Combining keyword and semantic search results.')
-            # if keyword search didn't succeed returns a mix between semantic and keyword search results
-            results = pd.concat([keywordResults, semanticResults], ignore_index=True)
+        query_codes = findCodes(query)
+        if query_codes:
+            logger.info('Query contains code. Using only semantic results containing the same code.')
+            semanticResults = semanticResults[semanticResults["sentence"].apply(lambda x: filterContainingCodes(search_codes=query_codes, sentence=x))]
+
+        logger.info('Combining keyword and semantic search results.')
+        # if keyword search didn't succeed returns a mix between semantic and keyword search results
+        results = pd.concat([keywordResults, semanticResults], ignore_index=True)
 
 
     logger.info(f'Evaluating scores against threshold for {results.shape[0]} matching sentences.')
@@ -253,13 +271,13 @@ def get_similar_questions(sentence_embeddings_df, query, query_vec, threshold, k
 
             logger.info(f'Using general threshold {threshold["all"]} for all columns without custom threshold.')
             results["custom_threshold"] = int(threshold["all"])
-            del threshold['all']
             
         else:
             results["custom_threshold"] = None
 
         # Setting the particular thresholds (per column)
         for c in threshold.keys():
+            if c == "all": continue
 
             logger.info(f'Using {threshold[c]} threshold for {c}.')
             results.loc[results["sentence_source"] == c, "custom_threshold"] = int(threshold[c])
