@@ -3,7 +3,7 @@ import numpy as np
 import operator
 import pandas as pd
 from flask import Blueprint, jsonify, request
-from pycarol import Carol, Storage
+from pycarol import Carol, Storage, Query
 from pycarol.apps import Apps
 from sentence_transformers import SentenceTransformer, util
 from webargs import fields, ValidationError
