@@ -278,9 +278,7 @@ def get_similar_questions(model, sentence_embeddings_df, query, threshold, k, re
     score = util.pytorch_cos_sim(query_vec, articles)
 
     # from all the query variations, consider only the highest score
-    score = score.max(dim=0)[0].tolist()
-
-    semanticResults['score'] = list(score.cpu().detach().numpy()[-1,:])
+    semanticResults['score'] = score.max(dim=0)[0].tolist()
     semanticResults["type_of_search"] = "semantic"
     max_sem_score = semanticResults["score"].max()
 
