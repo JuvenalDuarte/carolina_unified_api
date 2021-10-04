@@ -222,14 +222,33 @@ def expandSysnonyms(query):
         applicableSynonyms += list(set(combinations_s) & set(syn_mapping.keys()))
 
     if applicableSynonyms:
+        
         print(f"The following words will be replaced to generate query variations: {applicableSynonyms}.")
-
-        # Generating all possible combinations of synonyms
-        # WARNING: generates 2^n possible combinations. If n (number of applicable synonyms) is large,
-        # this task may take a while or raise OOM error.
-        for k in applicableSynonyms:
-            new_possible_variations = [q.replace(k, syn_mapping[k]) for q in queries_expanded]
-            queries_expanded += new_possible_variations
+        
+        # The code below generetes a cross product combination of all possible expansions on sysnonyms.
+        # Up to six different synonyms it is still feasible, generating 64 expanded queries and taking up 
+        # to 588 ms to encode the queries
+        if applicableSynonyms <= 6:
+            # Generating all possible combinations of synonyms
+            # WARNING: generates 2^n possible combinations. If n (number of applicable synonyms) is large,
+            # this task may take a while or raise OOM error.
+            for k in applicableSynonyms:
+                new_possible_variations = [q.replace(k, syn_mapping[k]) for q in queries_expanded]
+                queries_expanded += new_possible_variations
+        
+        # ... when dealing with more then 6 synonyms it is unfeasible to do the cross product, since it 
+        # starts generating more than 128 query variations and taking more than 1 second just to encode
+        # the queries. 
+        else:
+            # Generate a single query for replacing each synonym on the original query
+            new_possible_variations = [query.replace(k, syn_mapping[k]) for k in applicableSynonyms]
+            
+            # Generate one additional query replacing all synonyms
+            all_syns = query
+            for k in applicableSynonyms:
+                all_syns = all_syns.replace(k, syn_mapping[k])
+            
+            queries_expanded += new_possible_variations + [all_syns]
 
     return queries_expanded
 
@@ -239,8 +258,7 @@ def get_similar_questions(model, sentence_embeddings_df, query, threshold, k, re
 
     logger.info(f'Translating query \"{query}\" to embedding space.')
     query = transformSentences(query, custom_stopwords)
-    query_expanded = [query]
-    #expandSysnonyms(query)
+    query_expanded = expandSysnonyms(query)
 
     # KEYWORD SEARCH
     # =================================================
