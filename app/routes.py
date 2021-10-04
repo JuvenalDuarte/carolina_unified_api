@@ -228,7 +228,7 @@ def expandSysnonyms(query):
         # The code below generetes a cross product combination of all possible expansions on sysnonyms.
         # Up to six different synonyms it is still feasible, generating 64 expanded queries and taking up 
         # to 588 ms to encode the queries
-        if applicableSynonyms <= 6:
+        if len(applicableSynonyms) <= 6:
             # Generating all possible combinations of synonyms
             # WARNING: generates 2^n possible combinations. If n (number of applicable synonyms) is large,
             # this task may take a while or raise OOM error.
