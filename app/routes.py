@@ -239,7 +239,8 @@ def get_similar_questions(model, sentence_embeddings_df, query, threshold, k, re
 
     logger.info(f'Translating query \"{query}\" to embedding space.')
     query = transformSentences(query, custom_stopwords)
-    query_expanded = expandSysnonyms(query)
+    query_expanded = [query]
+    #expandSysnonyms(query)
 
     # KEYWORD SEARCH
     # =================================================
