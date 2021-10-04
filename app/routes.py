@@ -184,81 +184,13 @@ def isRelated(query_ntokens, row, limit):
     return True
 ## TDN SPECIFIC ##
 
-def getSynonyms():
-    global custom_stopwords
-    login = Carol()
-
-    # Download abbreviations from named query
-    abbreviations = Query(login).named(named_query='get_abbreviations').go().results
-    fromToTable = pd.DataFrame.from_records(abbreviations)
-
-    # Generate unique mappings from both directions
-    reverse = fromToTable.copy()
-    fromToTable.rename(columns={"abbreviationacronym":"from", "definition":"to"}, inplace=True)
-    reverse.rename(columns={"abbreviationacronym":"to", "definition":"from"}, inplace=True)
-    fromToTable = pd.concat([fromToTable, reverse], ignore_index=True)
-
-    # Regularizing case and special char variations
-    fromToTable["from"] = fromToTable["from"].apply(lambda x: transformSentences(x, custom_stopwords))
-    fromToTable["to"] = fromToTable["to"].apply(lambda x: transformSentences(x, custom_stopwords))
-
-    fromToTable.drop_duplicates(inplace=True)
-
-    mapping = dict(zip(fromToTable["from"].values, fromToTable["to"].values))
-
-    return mapping
-
-def expandSysnonyms(query):
-    global syn_mapping
-    queries_expanded = [query]
-
-    # Retrieving single words on query with applicable sysnonyms substitution
-    applicableSynonyms = list(set(query.split()) & set(syn_mapping.keys()))
-    
-    # Retrieving ngrams up to 5 tokens with applicable sysnonyms substitution
-    for ngram in [2, 3, 4, 5]:
-        combinations = list(ngrams(query.split(), ngram))
-        combinations_s = [" ".join(c) for c in combinations]
-        applicableSynonyms += list(set(combinations_s) & set(syn_mapping.keys()))
-
-    if applicableSynonyms:
-        
-        print(f"The following words will be replaced to generate query variations: {applicableSynonyms}.")
-        
-        # The code below generetes a cross product combination of all possible expansions on sysnonyms.
-        # Up to six different synonyms it is still feasible, generating 64 expanded queries and taking up 
-        # to 588 ms to encode the queries
-        if len(applicableSynonyms) <= 6:
-            # Generating all possible combinations of synonyms
-            # WARNING: generates 2^n possible combinations. If n (number of applicable synonyms) is large,
-            # this task may take a while or raise OOM error.
-            for k in applicableSynonyms:
-                new_possible_variations = [q.replace(k, syn_mapping[k]) for q in queries_expanded]
-                queries_expanded += new_possible_variations
-        
-        # ... when dealing with more then 6 synonyms it is unfeasible to do the cross product, since it 
-        # starts generating more than 128 query variations and taking more than 1 second just to encode
-        # the queries. 
-        else:
-            # Generate a single query for replacing each synonym on the original query
-            new_possible_variations = [query.replace(k, syn_mapping[k]) for k in applicableSynonyms]
-            
-            # Generate one additional query replacing all synonyms
-            all_syns = query
-            for k in applicableSynonyms:
-                all_syns = all_syns.replace(k, syn_mapping[k])
-            
-            queries_expanded += new_possible_variations + [all_syns]
-
-    return queries_expanded
-
 def get_similar_questions(model, sentence_embeddings_df, query, threshold, k, response_columns=None, id_column="id", validation=False):
     global keywordsearch_flag
     global custom_stopwords
 
     logger.info(f'Translating query \"{query}\" to embedding space.')
     query = transformSentences(query, custom_stopwords)
-    query_expanded = expandSysnonyms(query)
+    query_expanded = [query]
 
     # KEYWORD SEARCH
     # =================================================
@@ -406,9 +338,6 @@ keywordsearch_flag = True
 logger.info(f'Reading list of custom stopwords.')
 with open('/app/cfg/stopwords.txt') as f:
     custom_stopwords = f.read().splitlines()
-
-logger.info(f'Downloading synonyms mappings.')
-syn_mapping = getSynonyms()
 
 logger.info('App started. Please, make sure you load the model and knowledge base before you start.')
 
