@@ -126,8 +126,18 @@ def matching_tokens(search_tokens, sentence):
 def reverseKeywordSearch(kb, q, fields=["title", "question"], threshold=0.01):
     article_sentences = kb[kb["sentence_source"].isin(fields)].copy()
     query_tokens = q.split()
+
+    # Checks if any article contains the exact query as substring
+    substr_df = article_sentences[article_sentences["sentence"].apply(lambda x: True if q.contains(str(x)) and len(x) > 10 else False)].copy()
+
+    # If sentence is a substring of the query and it has at least 10 chars
+    if len(substr_df) >= 1:
+        # HARD CODED above current threshold
+        substr_df["score"] = 0.75
+        substr_df["type_of_search"] = "rkeyword"
+        return substr_df
     
-    # Checks if any title or question is exactly contained on the query
+    # Weighting matches over the lengh of search and sentence
     article_sentences["score"] = article_sentences["sentence"].apply(lambda x: matching_tokens(query_tokens, x))
     article_sentences = article_sentences[article_sentences["score"] > (threshold/100)]
     article_sentences["type_of_search"] = "rkeyword"
@@ -204,14 +214,16 @@ def get_similar_questions(model, sentence_embeddings_df, query, threshold, k, re
 
     if keywordsearch_flag:
         kcs_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "KCS"]
-        kcskeywordResults = keywordSearch(kb=kcs_articles, q=query, threshold=1, fields=keyword_columns)
+        kcskeywordResults = keywordSearch(kb=kcs_articles, q=query, threshold=0.9, fields=keyword_columns)
+        kcsrkeywordResults = reverseKeywordSearch(kb=kcs_articles, q=query, fields=keyword_columns, threshold=threshold["all"])
         logger.info(f'{kcskeywordResults.shape[0]} articles retrieved from keyword search on KCS database.')
+        logger.info(f'{kcsrkeywordResults.shape[0]} articles retrieved from reverse keyword search on KCS database.')
 
         tdn_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "TDN"]
         tdnkeywordResults = keywordSearch(kb=tdn_articles, q=query, threshold=0.9, fields=["title"])
         logger.info(f'{tdnkeywordResults.shape[0]} articles retrieved from keyword search on TDN database.')
 
-        keywordResults = pd.concat([kcskeywordResults, tdnkeywordResults])
+        keywordResults = pd.concat([kcskeywordResults, kcsrkeywordResults, tdnkeywordResults])
 
     else: 
         keywordResults = pd.DataFrame(columns=sentence_embeddings_df.columns)
@@ -297,16 +309,6 @@ def get_similar_questions(model, sentence_embeddings_df, query, threshold, k, re
     else:
         logger.info(f'Using general {threshold} threshold for all columns.')
         results = results[results["score"] >= (threshold/100)].copy()
-
-
-    ## KCS SPECIFIC ##
-    if (len(results) < 1):
-        logger.info('No article with score higher than the threshold. Trying reverse keyword search.')
-
-        # Tries reverse keyword search as the last resource
-        kcs_articles = sentence_embeddings_df[sentence_embeddings_df["database"] == "KCS"]
-        results = reverseKeywordSearch(kb=kcs_articles, q=query, fields=keyword_columns, threshold=threshold["all"])
-    ## KCS SPECIFIC ##
 
     if (len(results) < 1):
         logger.warn('No matching article has been found.')
