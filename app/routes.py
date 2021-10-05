@@ -128,7 +128,7 @@ def reverseKeywordSearch(kb, q, fields=["title", "question"], threshold=0.01):
     query_tokens = q.split()
 
     # Checks if any article contains the exact query as substring
-    substr_df = article_sentences[article_sentences["sentence"].apply(lambda x: True if q.contains(str(x)) and len(x) > 10 else False)].copy()
+    substr_df = article_sentences[article_sentences["sentence"].apply(lambda x: True if str(x) in q and len(x) > 10 else False)].copy()
 
     # If sentence is a substring of the query and it has at least 10 chars
     if len(substr_df) >= 1:
