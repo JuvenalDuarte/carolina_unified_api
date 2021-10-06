@@ -398,7 +398,7 @@ def validate():
         results_df, total_matches = get_similar_questions(model,
                                                         sentence_embeddings_df=df_tmp, 
                                                         query=query, 
-                                                        threshold=0.0, 
+                                                        threshold={"all": 0.0}, 
                                                         k=500, 
                                                         response_columns=None, 
                                                         id_column="id",
