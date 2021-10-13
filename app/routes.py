@@ -147,15 +147,25 @@ def reverseKeywordSearch(kb, q, fields=["title", "question"], threshold=0.01):
 
 def findCodes(txt):
     # The first pattern captures de definition + numbers, such as "erro d2233".
-    pattern1 = re.compile(r'(?:rotina|rejeicao|registro|error|erro|evento)\s[a-z]*[0-9.]{3,}')
+    pattern1 = re.compile(r'(?:rotina|rejeicao|registro|error|erro|evento)\s[a-z]*\s*[0-9.]{3,}')
     
     # The second pattern, an special case observed on rejections, captures de numbers + definition, such as "934 rejeicao".
     pattern2 = re.compile(r'[0-9]{3,}[\s]+(?:rejeicao)')
     
     codes = pattern1.findall(txt)
+
+    # Handling spaces within error codes
+    revised_codes = []
+    for c in codes:
+        tokens = c.split()
+        if len(tokens) > 2:
+            # if code comes as ""erro mata 930" it is transformed to "erro mata930"
+            revised_codes.append(tokens[0] + " " + "".join(tokens[1:]))
+        else:
+            revised_codes.append(c)
     
     codesr = pattern2.findall(txt)
-    codes += [" ".join(reversed(c.split())) for c in codesr]
+    codes = revised_codes + [" ".join(reversed(c.split())) for c in codesr]
     
     return codes
 
