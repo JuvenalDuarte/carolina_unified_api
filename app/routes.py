@@ -85,37 +85,38 @@ def findMatches(title, query_tokens, scale):
 def keywordSearch(kb, q, nresults=1, threshold=None, fields=["title", "question"]):
     title_kb = kb[kb["sentence_source"].isin(fields)].copy()
     
-    # Checks if any article contains the exact query as substring
-    substr_df = title_kb[title_kb["sentence"].str.contains(q)].copy()
-    
-    if len(substr_df) >= 1:
-        substr_df["score"] = 1.0
-    
-    # If the query is not a substring of the title...
+    if (len(q) > 10) or (len(q.split()) >= 2):
+        # Checks if any article contains the exact query as substring
+        exact_substr = title_kb[title_kb["sentence"].str.contains(q)].copy()
+        
+        if len(exact_substr) >= 1:
+            exact_substr["score"] = 1.0
     else:
-        # ... try moken matches individualy
-        query_tokens = q.split()
-        title_kb["score"] = title_kb["sentence"].apply(lambda s: findMatches(s, query_tokens, scale=0.9))
-        title_kb.sort_values(by="score", ascending=False, inplace=True)
-        substr_df = title_kb.copy()
+        exact_substr = pd.DataFrame(columns=title_kb.columns)
+    
+    # ... try moken matches individualy
+    query_tokens = q.split()
+    individual_matches = title_kb.copy()
+    individual_matches["score"] = individual_matches["sentence"].apply(lambda s: findMatches(s, query_tokens, scale=0.9))
+
+    # Discount score by its length difference to query
+    individual_matches["s_length"] = [ len(s) for s in individual_matches["sentence"].values ]
+    query_length = len(q)
+    max_length = individual_matches["s_length"].max()
+    individual_matches["score"] = individual_matches["s_length"].apply(lambda x: max(0.80, 1 - (x - query_length)/max_length))
+    individual_matches.drop(columns=["s_length"], inplace=True)
+
+    results = pd.concat([exact_substr, individual_matches])
+    results.sort_values(by="score", ascending=False, inplace=True)
+    results.drop_duplicates(subset=["id", "sentence"], inplace=True)
     
     if threshold:
-        substr_df = substr_df[substr_df["score"] >= threshold].copy()
+        results = results[results["score"] >= threshold].copy()
     else:
-        substr_df =  substr_df.head(nresults)
-    
-    ## KCS SPECIFIC ##
-    # Discount score by its length difference to query
-    substr_df["s_length"] = [ len(s) for s in substr_df["sentence"].values ]
-    query_length = len(q)
-    max_length = substr_df["s_length"].max()
-    substr_df["score"] = substr_df["s_length"].apply(lambda x: max(0.80, 1 - (x - query_length)/max_length))
-    substr_df.drop(columns=["s_length"], inplace=True)
-    ## KCS SPECIFIC ##
+        results =  results.head(nresults)
 
-    substr_df["type_of_search"] = "keyword"
-    
-    return substr_df
+    results["type_of_search"] = "keyword"
+    return results
 
 ## KCS SPECIFIC ##
 def matching_tokens(search_tokens, sentence):
